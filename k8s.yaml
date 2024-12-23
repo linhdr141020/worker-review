@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-review
+spec:
+  selector:
+    matchLabels:
+      app: worker-review
+  template:
+    metadata:
+      labels:
+        app: worker-review
+    spec:
+      containers:
+      - image: okteto.dev/worker-review:node
+        name: worker-review
+        imagePullPolicy: Always
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-review
+  annotations:
+    dev.okteto.com/auto-ingress: "true"
+spec:
+  type: ClusterIP
+  ports:
+  - name: "worker-review"
+    port: 3000
+  selector:
+    app: worker-review

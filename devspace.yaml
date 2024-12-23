@@ -1,0 +1,110 @@
+version: v2beta1
+name: worker-reviewgit
+vars:
+  DEBUG_PORT:
+    question: Which local debug port do you want to use?
+    default: "9229"
+  SUB_DOMAIN:
+    question: Which subdomain (getappio.com) to use for the worker?
+    default: "nghia-worker"
+# This is a list of `pipelines` that DevSpace can execute (you can define your own)
+pipelines:
+  # This is the pipeline for the main command: `devspace dev` (or `devspace run-pipeline dev`)
+  dev:
+    run: |-
+      run_dependencies --all       # 1. Deploy any projects this project needs (see "dependencies")
+      ensure_pull_secrets --all    # 2. Ensure pull secrets
+      create_deployments --all     # 3. Deploy Helm charts and manifests specfied as "deployments"
+      start_dev worker                # 4. Start dev mode "worker" (see "dev" section)
+  # You can run this pipeline via `devspace deploy` (or `devspace run-pipeline deploy`)
+  deploy:
+    run: |-
+      run_dependencies --all                            # 1. Deploy any projects this project needs (see "dependencies")
+      ensure_pull_secrets --all                         # 2. Ensure pull secrets
+      build_images --all -t $(git describe --always)    # 3. Build, tag (git commit hash) and push all images (see "images")
+      create_deployments --all                          # 4. Deploy Helm charts and manifests specfied as "deployments"
+# This is a list of `images` that DevSpace can build for this project
+# We recommend to skip image building during development (devspace dev) as much as possible
+
+# This is a list of `deployments` that DevSpace can create for this project
+deployments:
+  worker:
+    # This deployment uses `helm` but you can also define `kubectl` deployments or kustomizations
+    helm:
+      # We are deploying this project with the Helm chart you provided
+      chart:
+        name: component-chart
+        repo: https://charts.devspace.sh
+      values:
+        containers:
+          - image: node:18-slim #dummy container
+        nodeSelector:
+          node-role.kubernetes.io/dev: dev
+        tolerations:
+          - key: "dev"
+            operator: "Equal"
+            value: "dev"
+            effect: "NoSchedule"            
+        labels:
+          app: worker-review
+        service:
+          ports:
+            - port: 3000
+        ingress:
+          tls: true
+          tlsClusterIssuer: le-global-issuer
+          rules:
+            - host: ${SUB_DOMAIN}.getappio.com
+dev:
+  worker:
+    # Search for the container that runs this image
+    # imageSelector: registry.gitlab.com/worker-review/worker-review
+    resources:
+      limits:
+        memory: 4Gi
+      requests:
+        cpu: "0.5"
+        memory: 2Gi
+    labelSelector:
+      app: worker-review
+    # attach:
+    #   enabled: true
+    #   disableReplace: true
+    # Replace the container image with this dev-optimized image (allows to skip image building during development)
+    # devImage: node:18-slim
+    # Sync files between the local filesystem and the development container
+    sync:
+      - path: ./
+        excludePaths:
+          - node_modules
+          - build
+        uploadExcludeFile: .dockerignore
+    # Open a terminal and use the following command to start it
+    workingDir: /app
+    # command: ["npm"]
+    # args: ["run", "devgg"]    
+    terminal:
+      command: npm i && bash
+      #bash ./devspace_start.sh
+      # disableReplace: true
+    # Inject a lightweight SSH server into the container (so your IDE can connect to the remote dev env)
+    ssh:
+      enabled: true
+    # Make the following commands from my local machine available inside the dev container
+    # proxyCommands:
+    #   - command: devspace
+    #   - command: kubectl
+    #   - command: helm
+    #   - gitCredentials: true
+    # Forward the following ports to be able access your application via localhost
+    ports:
+      - port: ${DEBUG_PORT}
+    # Open the following URLs once they return an HTTP status code other than 502 or 503
+    # open:
+    #   - url: http://localhost:3000
+    persistPaths:
+      - path: /app
+dependencies:
+  ui:
+    path: ../ui-review
+    pipeline: depend
